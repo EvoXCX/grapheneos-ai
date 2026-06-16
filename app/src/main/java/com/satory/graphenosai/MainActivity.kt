@@ -130,7 +130,8 @@ class MainActivity : ComponentActivity() {
                                     onOpenAssistantSettings = ::openAssistantSettings,
                                     onLaunchAssistant = ::launchAssistant,
                                     onOpenApiKeySettings = { navController.navigate("settings") },
-                                    onOpenSettings = { navController.navigate("settings") }
+                                    onOpenSettings = { navController.navigate("settings") },
+                                    onOpenVoiceLanguages = { navController.navigate("voice_languages") }
                                 )
                             }
                             composable("settings") {
@@ -231,7 +232,8 @@ fun MainScreen(
     onOpenAssistantSettings: () -> Unit,
     onLaunchAssistant: () -> Unit,
     onOpenApiKeySettings: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenVoiceLanguages: () -> Unit
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as AssistantApplication
@@ -329,7 +331,7 @@ fun MainScreen(
             isComplete = isModelDownloaded,
             icon = Icons.Filled.RecordVoiceOver,
             action = "Download",
-            onAction = { }
+            onAction = onOpenVoiceLanguages
         )
         SetupProgressCard(
             title = "Accessibility Service",
@@ -405,7 +407,7 @@ fun MainScreen(
                     "On-device speech recognition (Vosk)",
                     "Encrypted API key storage",
                     "No device identifiers sent to cloud",
-                    "Anonymized web searches via proxy",
+                    "Configurable privacy-focused search providers",
                     "Minimal permissions required",
                     "TLS 1.3 for all network requests"
                 )

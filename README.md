@@ -91,4 +91,4 @@ MIT
 - **GrapheneOS** - For making privacy-focused Android possible
 - **OpenRouter** - For unified access to multiple AI models
 - **Brave Search** - For privacy-respecting search API
-- **Whisper.cpp** / **Vosk** - For on-device speech recognition
+- **Vosk** - For on-device speech recognition

@@ -208,8 +208,8 @@ Limitations:
             return@callbackFlow
         }
         
-        // Build prompt with chat history
-        val fullPrompt = buildPrompt(userQuery)
+        // Build prompt from chat session (user message already added by AssistantService)
+        val fullPrompt = buildPrompt()
         
         Log.i(TAG, "Generating with prompt length: ${fullPrompt.length}")
         
@@ -391,11 +391,10 @@ Limitations:
      * Build a full prompt including system prompt and chat history
      * Supports ChatML and Gemma prompt formats
      */
-    private fun buildPrompt(userQuery: String): String {
+    private fun buildPrompt(): String {
         val sb = StringBuilder()
         
         if (currentModelFormat == "gemma") {
-            // Gemma format
             sb.append("<start_of_turn>system\n")
             sb.append(systemPrompt)
             sb.append("<end_of_turn>\n")
@@ -415,12 +414,8 @@ Limitations:
                 }
             }
             
-            sb.append("<start_of_turn>user\n")
-            sb.append(userQuery)
-            sb.append("<end_of_turn>\n")
             sb.append("<start_of_turn>model\n")
         } else {
-            // ChatML format
             sb.append("<|im_start|>system\n")
             sb.append(systemPrompt)
             sb.append("<|im_end|>\n")
@@ -440,9 +435,6 @@ Limitations:
                 }
             }
             
-            sb.append("<|im_start|>user\n")
-            sb.append(userQuery)
-            sb.append("<|im_end|>\n")
             sb.append("<|im_start|>assistant\n")
         }
         

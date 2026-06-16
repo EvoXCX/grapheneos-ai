@@ -1044,7 +1044,7 @@ class AssistantService : Service() {
         // TTS
         if (settingsManager.ttsEnabled) {
             _assistantState.value = AssistantState.Speaking
-            ttsManager.speak(cleaned)
+            ttsManager.speakAndWait(cleaned)
         }
 
         _assistantState.value = AssistantState.Complete
