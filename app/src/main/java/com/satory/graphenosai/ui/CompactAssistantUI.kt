@@ -282,7 +282,9 @@ fun CompactAssistantView(
 
     val statusText = when (state) {
         is AssistantState.Listening -> if (transcription.isEmpty()) "Listening..." else ""
-        is AssistantState.Processing -> "Thinking..."
+        is AssistantState.Processing -> {
+            if (isLocalProvider && !service.isLocalModelReady()) "Loading model..." else "Thinking..."
+        }
         is AssistantState.Searching -> "Searching web..."
         is AssistantState.Responding -> ""
         is AssistantState.Speaking -> ""
@@ -300,6 +302,7 @@ fun CompactAssistantView(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 8.dp)
+                .imePadding()
                 .navigationBarsPadding()
                 .heightIn(max = sheetMaxHeight)
                 .clickable(

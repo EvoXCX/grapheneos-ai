@@ -31,6 +31,8 @@ import com.satory.graphenosai.ui.SettingsManager
 import com.satory.graphenosai.weather.OpenMeteoClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -60,6 +62,8 @@ class AssistantService : Service() {
     
     private var speechRecognitionJob: Job? = null
     private var activeResponseJob: Job? = null
+    private val localModelMutex = Mutex()
+    private var localModelLoadJob: Deferred<Result<Unit>>? = null
 
     // State flow for UI binding
     private val _assistantState = MutableStateFlow<AssistantState>(AssistantState.Idle)
@@ -936,13 +940,24 @@ class AssistantService : Service() {
      * Direct streaming without function calling (local models or search disabled).
      */
     private suspend fun streamDirect(query: String, imageBase64: String? = null) {
-        _assistantState.value = AssistantState.Responding
         _response.value = ""
 
         val fullResponse = StringBuilder()
         val useLocal = settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL
 
         try {
+            if (useLocal) {
+                val loadResult = ensureLocalModelReady()
+                loadResult.onFailure { error ->
+                    val message = error.message ?: "Failed to load local model"
+                    _response.value = message
+                    _assistantState.value = AssistantState.Error(message)
+                    return
+                }
+            }
+
+            _assistantState.value = AssistantState.Responding
+
             val effectiveImageBase64 = if (useLocal) null else imageBase64
 
             val responseFlow = when {
@@ -1175,60 +1190,90 @@ class AssistantService : Service() {
      * Initialize local LLM model if selected
      */
     private fun initializeLocalModel() {
-        serviceScope.launch(Dispatchers.IO) {
-            val modelId = settingsManager.localModelId
-            val modelPath = localModelManager.getModelPath(modelId)
-            
-            if (modelPath != null) {
-                val modelInfo = localModelManager.getModelInfo(modelId)
-                val modelName = modelInfo?.name ?: "Local Model"
-                
-                Log.i(TAG, "Initializing local model: $modelName at $modelPath")
-                
-                llamaCppClient.initialize()
-                val result = llamaCppClient.loadModel(modelPath, modelName, modelInfo?.promptFormat ?: "chatml")
-                
-                result.fold(
-                    onSuccess = {
-                        Log.i(TAG, "Local model loaded successfully: $modelName")
-                    },
-                    onFailure = { error ->
-                        Log.e(TAG, "Failed to load local model: ${error.message}")
-                    }
-                )
-            } else {
-                Log.w(TAG, "No local model downloaded for: $modelId")
+        serviceScope.launch {
+            localModelMutex.withLock {
+                if (llamaCppClient.isModelLoaded()) return@launch
+
+                val activeJob = localModelLoadJob
+                if (activeJob != null && activeJob.isActive) return@launch
+
+                localModelLoadJob = serviceScope.async(Dispatchers.IO) {
+                    loadLocalModelInternal(settingsManager.localModelId)
+                }
             }
         }
+    }
+
+    private suspend fun loadLocalModelInternal(
+        modelId: String,
+        updateSelectedId: Boolean = false
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val modelPath = localModelManager.getModelPath(modelId)
+        if (modelPath == null) {
+            Log.w(TAG, "No local model downloaded for: $modelId")
+            return@withContext Result.failure(
+                Exception("No local model downloaded. Please download a model in Settings.")
+            )
+        }
+
+        val modelInfo = localModelManager.getModelInfo(modelId)
+        val modelName = modelInfo?.name ?: "Local Model"
+
+        Log.i(TAG, "Loading local model: $modelName at $modelPath")
+
+        llamaCppClient.initialize()
+        llamaCppClient.unloadModel()
+        llamaCppClient.contextSize = modelInfo?.contextSize ?: 2048
+        val result = llamaCppClient.loadModel(
+            modelPath,
+            modelName,
+            modelInfo?.promptFormat ?: "chatml"
+        )
+
+        result.onSuccess {
+            if (updateSelectedId) {
+                settingsManager.localModelId = modelId
+            }
+            Log.i(TAG, "Local model loaded successfully: $modelName")
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to load local model: ${error.message}")
+        }
+
+        result
+    }
+
+    private suspend fun ensureLocalModelReady(): Result<Unit> {
+        if (llamaCppClient.isModelLoaded()) return Result.success(Unit)
+
+        val job = localModelMutex.withLock {
+            if (llamaCppClient.isModelLoaded()) return@withLock null
+
+            val activeJob = localModelLoadJob
+            if (activeJob != null && activeJob.isActive) {
+                return@withLock activeJob
+            }
+
+            serviceScope.async(Dispatchers.IO) {
+                loadLocalModelInternal(settingsManager.localModelId)
+            }.also { localModelLoadJob = it }
+        }
+
+        if (job == null) return Result.success(Unit)
+        return job.await()
     }
     
     /**
      * Load a specific local model
      */
     fun loadLocalModel(modelId: String) {
-        serviceScope.launch(Dispatchers.IO) {
-            val modelPath = localModelManager.getModelPath(modelId)
-            if (modelPath != null) {
-                val modelInfo = localModelManager.getModelInfo(modelId)
-                val modelName = modelInfo?.name ?: "Local Model"
-                
-                // Unload current model first
-                llamaCppClient.unloadModel()
-                
-                // Load new model
-                llamaCppClient.contextSize = modelInfo?.contextSize ?: 2048
-                val result = llamaCppClient.loadModel(modelPath, modelName, modelInfo?.promptFormat ?: "chatml")
-                
-                result.fold(
-                    onSuccess = {
-                        settingsManager.localModelId = modelId
-                        Log.i(TAG, "Switched to local model: $modelName")
-                    },
-                    onFailure = { error ->
-                        Log.e(TAG, "Failed to load local model: ${error.message}")
-                    }
-                )
+        serviceScope.launch {
+            val job = localModelMutex.withLock {
+                localModelLoadJob?.takeIf { it.isActive }?.cancel()
+                serviceScope.async(Dispatchers.IO) {
+                    loadLocalModelInternal(modelId, updateSelectedId = true)
+                }.also { localModelLoadJob = it }
             }
+            job.await()
         }
     }
     
