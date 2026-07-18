@@ -63,7 +63,7 @@ class AssistantService : Service() {
         private set
     lateinit var settingsManager: SettingsManager
         private set
-    private lateinit var chatHistoryManager: ChatHistoryManager
+    lateinit var chatHistoryManager: ChatHistoryManager
     
     private var speechRecognitionJob: Job? = null
     private var audioCaptureJob: Job? = null
