@@ -39,13 +39,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Create gradle.properties (dummy signing config for debug)
+        run: |
+          cat >> gradle.properties << 'PROPS'
+          MYAPP_UPLOAD_STORE_FILE=/dev/null
+          MYAPP_UPLOAD_STORE_PASSWORD=
+          MYAPP_UPLOAD_KEY_ALIAS=
+          MYAPP_UPLOAD_KEY_PASSWORD=
+          PROPS
+
       - name: Build debug APK
         run: ./gradlew assembleDebug
-        env:
-          MYAPP_UPLOAD_STORE_FILE: /dev/null
-          MYAPP_UPLOAD_STORE_PASSWORD: ""
-          MYAPP_UPLOAD_KEY_ALIAS: ""
-          MYAPP_UPLOAD_KEY_PASSWORD: ""
 
       - name: Extract version
         id: version
